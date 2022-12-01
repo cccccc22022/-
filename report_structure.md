@@ -108,7 +108,11 @@ Due to the increasingly serious aging phenomenon in contemporary society, and th
 
 6.基于生命体征实时监测数据的**应急报警系统**
 
-该部分在基于多传感器及视觉与声音分析的睡眠数据监测的系统支持下，将重点集中于人体心率与呼吸情况。当判断出现呼吸暂停或心跳暂停的情况下，立即向云端与客户端推送数据
+该部分在基于多传感器及视觉与声音分析的睡眠数据监测的系统支持下，将重点集中于人体心率与呼吸情况。当判断出现呼吸暂停或心跳暂停的情况下，立即向云端与客户端推送数据。
+
+实现指标：
+
+根据生命监测算法实时分析心率、呼吸等数据，准确性要求高
 
 
 
@@ -144,7 +148,108 @@ Due to the increasingly serious aging phenomenon in contemporary society, and th
 
 ### 4.5 系统调试数据【省电报告书的精简，只阐述必要的模块及整体】
 
+### 温湿度传感器可行性验证 
 
+为确保 AHT20 温湿度传感器在该项目中的可行性，我们将温湿度传感器外接主控板（如下图所示），通过串口将光照强度反馈于计算机中，并以数据化、直观性显示。该实验较好地反映了 AHT20 传感器的稳定性、精确性和高响应速度，确保在本项目之中的可行性。
+
+[![zYRe5d.png](https://s1.ax1x.com/2022/11/25/zYRe5d.png)](https://imgse.com/i/zYRe5d)
+
+
+
+代码
+
+```cpp
+uint8_t AHT10_Read_Humi_Temp(float *HUMI, float *Temp)
+{
+	uint32_t humi=0,temp=0;
+	IIC_Start();
+	IIC_Send_Byte(AHT_WRITE);
+	while(IIC_Wait_Ack());
+	IIC_Send_Byte(0xAC);//0xE1 0xAC
+	while(IIC_Wait_Ack());
+	IIC_Send_Byte(0x33);
+	while(IIC_Wait_Ack());
+	IIC_Send_Byte(0x00);
+	while(IIC_Wait_Ack());
+	IIC_Stop();
+	HAL_Delay(80);
+	
+	IIC_Start();
+	IIC_Send_Byte(AHT_READ);
+	while(IIC_Wait_Ack());
+	ACK=IIC_Read_Byte(1);
+	if((ACK&0x08)==0)
+	{
+		AHT10_Write_Init();
+	}
+	if((ACK&0x80)==0)
+	{
+		for(uint8_t i=0;i<6;i++)
+		{
+			if(i==5)
+			{
+				IIC_Read_Byte(0);
+				IIC_Stop();
+			}
+			else
+			{
+				DATE[i]=IIC_Read_Byte(1);				
+			}
+		}
+		
+		humi = ((DATE[0]<<12)|(DATE[1]<<4)|(DATE[2]>>4));
+		temp = (((DATE[2]&0x0F)<<16)|(DATE[3]<<8)|DATE[4]);
+		
+		*HUMI = (humi*100.0/1024/1024+0.5);
+		*Temp = (temp*200.0*10.0/1024/1024+0.5)/10.0-50;
+		return 0;
+	}
+	IIC_Stop();
+	return 1;
+}
+```
+
+### 压力传感器可行性验证 
+
+为了确保压电薄膜（PVDF）能够准确反馈压力数据，并达到实验要求的反馈速度与反馈精度，我们对ADS1014芯片进行了读写测试。将ADS1014芯片输入端连接压电薄膜的两个电极，输出端口连接主控板，通过串口将ADC数据反馈于计算机中，打印显示。
+
+代码
+
+```cpp
+void ADS1014_Init()
+{
+    IIC_Start();
+	IIC_Send_Byte(ADS1014_WRITE);
+    while(IIC_Wait_Ack());
+	IIC_Send_Byte(0x01);//ADS配置寄存器
+	while(IIC_Wait_Ack());
+	IIC_Send_Byte(0x03);//对高8位寄存器进行操作
+	while(IIC_Wait_Ack());
+    IIC_Send_Byte(0x23);//采样率250Hz
+    while(IIC_Wait_Ack());
+    IIC_Stop();
+}
+
+uint8_t ADS1014_Read(uint16_t *ADC)
+{
+    uint8_t DATE[2]={0};
+    IIC_Start();
+	IIC_Send_Byte(ADS1014_READ);
+    while(IIC_Wait_Ack());
+    DATE[0]=IIC_Read_Byte(1);
+    DATE[1]=IIC_Read_Byte(0);
+    IIC_Stop();
+    *ADC=((DATE[0]<<8))|(DATE[1]))
+    return 0;
+}
+    
+```
+
+鉴于ADS1014的采样率可以设置为128Hz，250Hz，490Hz，在这里设置为250Hz，主要基于如下两个理由：
+
+1.数据的采样率一般为工频的整数倍(23]，我国的工频为50Hz，所以选择250Hz的AD采样率设计对于本项目应用来说是最好的一个选择。
+
+2.490Hz的采样率不是工频的整数倍，而且主要的监测对象是人体心跳与呼吸运动所产生的振动信号，振动信号的频率属于低频范围，不需要超过300Hz的采样率，当采样率设置的过高时也会增大ADC芯片的数据吞吐量，这在一定程度上会影响到系统的实时性。
 
 ### 附录及参考文献
 
